@@ -1,0 +1,185 @@
+----
+title: "WRI Aqueduct data comparison"
+subtitle: "what has changed between v3 and v4"
+author: "Rafael Camargo"
+date: "September 8, 2023"
+engine: knitr
+format:
+  html:
+    toc: true
+execute:
+  warning: false    
+---
+
+## 1. Setup
+
+Load required packages
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, here, readxl, sf, skimr, mapview)
+```
+
+```{r}
+sf::sf_use_s2(FALSE) # due to issues in HydroBASINS geometries
+```
+
+## 2. Load data
+
+```{r}
+path_to_gdrive <- "/Users/camargorafael/Google Drive/My Drive/Shortcuts/Water"
+```
+
+```{r}
+st_layers(here(path_to_gdrive, "4. Tools & Methods", "Aqueduct Water Risk Atlas", "Aqueduct 3.0", "baseline", "annual", "arcmap", "y2019m07d12_aqueduct30_v01.gdb"))
+```
+
+```{r}
+v3 <- read_sf(here(path_to_gdrive, "4. Tools & Methods", "Aqueduct Water Risk Atlas", "Aqueduct 3.0", "baseline", "annual", "arcmap", "y2019m07d12_aqueduct30_v01.gdb"), layer = "annual")
+```
+
+```{r}
+st_layers(here(path_to_gdrive, "4. Tools & Methods", "Aqueduct Water Risk Atlas", "Aqueduct 4.0", "GDB", "Aq40_Y2023D07M05.gdb"))
+```
+
+```{r}
+v4 <- read_sf(here(path_to_gdrive, "4. Tools & Methods", "Aqueduct Water Risk Atlas", "Aqueduct 4.0", "GDB", "Aq40_Y2023D07M05.gdb"), layer = "baseline_annual")
+```
+
+```{r}
+son_water <- read_rds(here("/Users", "camargorafael", "Google Drive", "My Drive", "ws_r", "sbtn-SoN-water", "output", "sbnt_son_water.rds"))
+```
+
+## 3. Assess change in BWS from v3 to v4
+
+```{r}
+change <- v4 |>
+  left_join(st_drop_geometry(v3), by = "aq30_id", suffix = c(".v4", ".v3"), keep = TRUE) |> 
+  mutate(across(c(bws_raw.v4, bws_score.v4, bws_cat.v4), ~ na_if(.x, -9999))) |> 
+  mutate(across(c(bws_cat.v3, bws_cat.v4), ~ if_else(.x == "Arid and Low Water Use", 5, .x))) |>  
+  mutate(
+    aq30_id.v4 = as.factor(aq30_id.v4),
+    aq30_id.v3 = as.factor(aq30_id.v3),
+    aq30_id.diff = ifelse(aq30_id.v3 == aq30_id.v4, FALSE, TRUE),
+    name_0.diff = ifelse(name_0.v3 == name_0.v4, FALSE, TRUE),
+    name_1.diff = ifelse(name_1.v3 == name_1.v4, FALSE, TRUE),
+    bws_raw.diff = bws_raw.v4 - bws_raw.v3,
+    bws_score.diff = bws_score.v4 - bws_score.v3,
+    bws_cat.diff = bws_cat.v4 - bws_cat.v3,
+    #bws_cat.diff = as.factor(bws_cat.diff),
+    bws_label.v4 = na_if(bws_label.v4, "No Data"),
+    bws_label.diff = ifelse(bws_label.v3 == bws_label.v4, FALSE, TRUE)
+  ) |> 
+  select(
+    string_id.v4, aq30_id.v3, aq30_id.v4, aq30_id.diff,
+    name_0.v3, name_0.v4, name_0.diff, name_1.v3, name_1.v4, name_1.diff,
+    bws_raw.v3, bws_raw.v4, bws_raw.diff, bws_score.v3, bws_score.v4, bws_score.diff, bws_cat.v3, bws_cat.v4, bws_cat.diff, bws_label.v3, bws_label.v4, bws_label.diff
+  )
+```
+
+```{r}
+st_drop_geometry(change) |> 
+  skim()
+```
+
+```{r}
+change |>
+  filter(bws_label.diff == TRUE) |>
+  mutate(bws_cat.diff = as.factor(bws_cat.diff)) |> 
+  mapview(
+    layer.name = "Difference in BWS v3 to v4",
+    zcol = "bws_cat.diff",
+    col.regions = colorRampPalette(c("royalblue3", "grey95", "orangered3"))(10),
+    lwd = 0,
+    alpha.regions = 1
+  )
+```
+
+```{r}
+change |>
+  st_drop_geometry() |> 
+  filter(bws_label.diff == TRUE) |>
+  count(bws_cat.diff, sort = TRUE)
+```
+
+```{r}
+change |>
+  st_drop_geometry() |> 
+  filter(bws_label.diff == TRUE & bws_cat.diff %in% c(-5, -4, -3, 3, 4, 5)) |> 
+  count(name_0.v4, sort = TRUE)
+```
+
+```{r}
+change |>
+  st_drop_geometry() |> 
+  filter(bws_cat.diff > 0) |> 
+  nrow()/nrow(change)
+```
+
+```{r}
+change |>
+  st_drop_geometry() |> 
+  filter(bws_cat.diff > 0) |> 
+  nrow()/nrow(change)
+```
+
+## 4. Assess the effect on SBTN Water Availability layer
+
+```{r}
+son_water2 <- son_water |> 
+  st_join(
+    select(change, bws_cat.v4),
+    largest = TRUE
+  ) |> 
+  rowwise() |> 
+  mutate(
+    wa_max2 = max(c(bws_cat.v4, wdp_n, wsb_n), na.rm = TRUE),
+    .after = region
+  ) |> 
+  ungroup() |> 
+  mutate(
+    wa_max.diff = wa_max2 - wa_max,
+    wa_max.diff = if_else(!between(wa_max.diff, -5, 5), NA, wa_max.diff)
+  )
+```
+
+```{r}
+son_water2 |> 
+  st_drop_geometry() |> 
+  skim()
+```
+
+```{r}
+son_water2 |>
+  filter(wa_max.diff %in% c(-5:-1, 1:5)) |> 
+  #filter(between(wa_max.diff, -5, -1) | between(wa_max.diff, 1, 5)) |>
+  mutate(wa_max.diff = as.factor(wa_max.diff)) |> 
+  mapview(
+    layer.name = "Effect on SBTN Water Availability layer",
+    zcol = "wa_max.diff",
+    col.regions = colorRampPalette(c("royalblue3", "grey95", "orangered3"))(10),
+    lwd = 0,
+    alpha.regions = 1
+  )
+```
+
+```{r}
+son_water2 |>
+  st_drop_geometry() |> 
+  filter(between(wa_max.diff, -5, -1) | between(wa_max.diff, 1, 5)) |>
+  count(wa_max.diff, sort = TRUE)
+```
+
+```{r}
+son_water2 |>
+  st_drop_geometry() |> 
+  filter(wa_max.diff > 0) |> 
+  nrow()/nrow(son_water2)
+```
+
+```{r}
+son_water2 |> 
+  st_drop_geometry() |> 
+  filter(wa_max.diff < 0) |> 
+  nrow()/nrow(son_water2)
+```
