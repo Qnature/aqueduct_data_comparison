@@ -17,7 +17,7 @@ Load required packages
 
 ```{r}
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, here, readxl, sf, skimr, mapview)
+pacman::p_load(tidyverse, here, readxl, sf, skimr, rnaturalearth, mapview)
 ```
 
 ```{r}
@@ -27,27 +27,27 @@ sf::sf_use_s2(FALSE) # due to issues in HydroBASINS geometries
 ## 2. Load data
 
 ```{r}
-path_to_gdrive <- "/Users/camargorafael/Google Drive/My Drive/Shortcuts/Water"
+onedrive_water <- "/Users/camargorafael/Library/CloudStorage/OneDrive-SharedLibraries-TheBostonConsultingGroup,Inc/Q-NC-Communities - Water"
 ```
 
 ```{r}
-st_layers(here(path_to_gdrive, "4. Tools & Methods", "Aqueduct Water Risk Atlas", "Aqueduct 3.0", "baseline", "annual", "arcmap", "y2019m07d12_aqueduct30_v01.gdb"))
+st_layers(here(onedrive_water, "4. Tools & Methods", "Aqueduct Water Risk Atlas", "Aqueduct 3.0", "baseline", "annual", "arcmap", "y2019m07d12_aqueduct30_v01.gdb"))
 ```
 
 ```{r}
-v3 <- read_sf(here(path_to_gdrive, "4. Tools & Methods", "Aqueduct Water Risk Atlas", "Aqueduct 3.0", "baseline", "annual", "arcmap", "y2019m07d12_aqueduct30_v01.gdb"), layer = "annual")
+v3 <- read_sf(here(onedrive_water, "4. Tools & Methods", "Aqueduct Water Risk Atlas", "Aqueduct 3.0", "baseline", "annual", "arcmap", "y2019m07d12_aqueduct30_v01.gdb"), layer = "annual")
 ```
 
 ```{r}
-st_layers(here(path_to_gdrive, "4. Tools & Methods", "Aqueduct Water Risk Atlas", "Aqueduct 4.0", "GDB", "Aq40_Y2023D07M05.gdb"))
+st_layers(here(onedrive_water, "4. Tools & Methods", "Aqueduct Water Risk Atlas", "Aqueduct 4.0", "GDB", "Aq40_Y2023D07M05.gdb"))
 ```
 
 ```{r}
-v4 <- read_sf(here(path_to_gdrive, "4. Tools & Methods", "Aqueduct Water Risk Atlas", "Aqueduct 4.0", "GDB", "Aq40_Y2023D07M05.gdb"), layer = "baseline_annual")
+v4 <- read_sf(here(onedrive_water, "4. Tools & Methods", "Aqueduct Water Risk Atlas", "Aqueduct 4.0", "GDB", "Aq40_Y2023D07M05.gdb"), layer = "baseline_annual")
 ```
 
 ```{r}
-son_water <- read_rds(here("/Users", "camargorafael", "Google Drive", "My Drive", "ws_r", "sbtn-SoN-water", "output", "sbnt_son_water.rds"))
+son_water <- read_rds(here(onedrive_water, "4. Tools & Methods", "R_workflows", "assess_water_risk", "constants", "sbtn_son_water.rds"))
 ```
 
 ## 3. Assess change in BWS from v3 to v4
@@ -116,13 +116,6 @@ change |>
   nrow()/nrow(change)
 ```
 
-```{r}
-change |>
-  st_drop_geometry() |> 
-  filter(bws_cat.diff > 0) |> 
-  nrow()/nrow(change)
-```
-
 ## 4. Assess the effect on SBTN Water Availability layer
 
 ```{r}
@@ -150,10 +143,56 @@ son_water2 |>
 ```
 
 ```{r}
-son_water2 |>
+basemap <- ne_countries(scale = "medium", returnclass = "sf") |>
+  filter(admin != "Antarctica")
+```
+
+```{r}  
+data_for_plot <- son_water2 |>
   filter(wa_max.diff %in% c(-5:-1, 1:5)) |> 
   #filter(between(wa_max.diff, -5, -1) | between(wa_max.diff, 1, 5)) |>
-  mutate(wa_max.diff = as.factor(wa_max.diff)) |> 
+  mutate(wa_max.diff = as.factor(wa_max.diff))
+```
+
+```{r} 
+ggplot() +
+  geom_sf(data = basemap, color = "grey50", fill = "grey95", lwd = 0.1, alpha = 1) +
+  geom_sf(data = data_for_plot, aes(fill = wa_max.diff), color = "grey70", lwd = 0.01, alpha = 1) +
+  geom_sf(data = basemap, color = "grey50", fill = NA, lwd = 0.1, alpha = 1) +
+  scale_fill_manual(
+    name = "Effect on SBTN layer\nMax Water Availability",
+    limits = seq(-5, 5, 1),
+    #values = colorRampPalette(c("royalblue4", "grey95", "orangered4"))(11)
+    values = c(
+      "-5" = "#27408B",
+      "-4" = "#4F639F",
+      "-3" = "#7887B4",
+      "-2" = "#A0AAC8",
+      "-1" = "#C9CEDD",
+      "0" = "#F2F2F2",
+      "1" = "#DDC8C1",
+      "2" = "#C89F91",
+      "3" = "#B47660",
+      "4" = "#9F4E30",
+      "5" = "#8B2500"
+    )
+  ) +
+  coord_sf(
+    xlim = c(-11800000, 15500000), # global view
+    ylim = c(8200000, -6300000), # global view
+    crs = "EPSG:8857",
+    expand = FALSE
+  ) +
+  theme_void()
+```
+
+```{r}
+ggsave(here("outputs", "Effect_on_SBTN_layer.jpeg"),
+       width = 40, height = 20, dpi = 300, units = "cm", device = "jpeg")
+```
+
+```{r}
+map_effect_son <- data_for_plot |>
   mapview(
     layer.name = "Effect on SBTN Water Availability layer",
     zcol = "wa_max.diff",
@@ -161,6 +200,11 @@ son_water2 |>
     lwd = 0,
     alpha.regions = 1
   )
+map_effect_son
+```
+
+```{r}
+mapshot(map_effect_son, here("outputs", "Effect_on_SBTN_layer.html"))
 ```
 
 ```{r}
