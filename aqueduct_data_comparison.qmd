@@ -1,4 +1,4 @@
-----
+---
 title: "WRI Aqueduct data comparison"
 subtitle: "what has changed between v3 and v4"
 author: "Rafael Camargo"
@@ -47,7 +47,11 @@ v4 <- read_sf(here(onedrive_water, "4. Tools & Methods", "Aqueduct Water Risk At
 ```
 
 ```{r}
-son_water <- read_rds(here(onedrive_water, "4. Tools & Methods", "R_workflows", "assess_water_risk", "constants", "sbtn_son_water.rds"))
+onedrive_data <- "/Users/camargorafael/Library/CloudStorage/OneDrive-SharedLibraries-TheBostonConsultingGroup,Inc/Q-NC-Communities - G3S/3. Data"
+```
+
+```{r}
+son_water <- read_rds(here(onedrive_data, "sbtn", "sbtn_son_water.rds"))
 ```
 
 ## 3. Assess change in BWS from v3 to v4
@@ -112,7 +116,7 @@ change |>
 ```{r}
 change |>
   st_drop_geometry() |> 
-  filter(bws_cat.diff > 0) |> 
+  filter(bws_cat.diff > 0) |> # i.e, lower water stress than in v3
   nrow()/nrow(change)
 ```
 
@@ -121,19 +125,17 @@ change |>
 ```{r}
 son_water2 <- son_water |> 
   st_join(
-    select(change, bws_cat.v4),
+    select(change, bws_raw2 = bws_raw.v4, bws_n2 = bws_cat.v4, bws_label2 = bws_label.v4),
     largest = TRUE
   ) |> 
   rowwise() |> 
-  mutate(
-    wa_max2 = max(c(bws_cat.v4, wdp_n, wsb_n), na.rm = TRUE),
-    .after = region
-  ) |> 
+  mutate(wa_max2 = max(c(bws_n2, wdp_n, wsb_n), na.rm = TRUE)) |> 
   ungroup() |> 
   mutate(
     wa_max.diff = wa_max2 - wa_max,
     wa_max.diff = if_else(!between(wa_max.diff, -5, 5), NA, wa_max.diff)
-  )
+  ) |> 
+  relocate(geometry, .after = last_col())
 ```
 
 ```{r}
@@ -150,7 +152,6 @@ basemap <- ne_countries(scale = "medium", returnclass = "sf") |>
 ```{r}  
 data_for_plot <- son_water2 |>
   filter(wa_max.diff %in% c(-5:-1, 1:5)) |> 
-  #filter(between(wa_max.diff, -5, -1) | between(wa_max.diff, 1, 5)) |>
   mutate(wa_max.diff = as.factor(wa_max.diff))
 ```
 
@@ -210,20 +211,28 @@ mapshot(map_effect_son, here("outputs", "Effect_on_SBTN_layer.html"))
 ```{r}
 son_water2 |>
   st_drop_geometry() |> 
-  filter(between(wa_max.diff, -5, -1) | between(wa_max.diff, 1, 5)) |>
+  filter(wa_max.diff %in% c(-5:-1, 1:5)) |>
   count(wa_max.diff, sort = TRUE)
-```
-
-```{r}
-son_water2 |>
-  st_drop_geometry() |> 
-  filter(wa_max.diff > 0) |> 
-  nrow()/nrow(son_water2)
 ```
 
 ```{r}
 son_water2 |> 
   st_drop_geometry() |> 
-  filter(wa_max.diff < 0) |> 
+  filter(wa_max.diff < 0) |> # i.e, lower wa_max than in v1 
   nrow()/nrow(son_water2)
+```
+
+```{r}
+son_water2 |>
+  st_drop_geometry() |> 
+  filter(wa_max.diff > 0) |> # i.e, higher wa_max than in v1
+  nrow()/nrow(son_water2)
+```
+
+## 5. Export 
+
+```{r}
+son_water2 |> 
+  rename(wa_max.dif = wa_max.diff) |> 
+  st_write(here("outputs", "shp", "sbtn_son_water_v2.shp"), layer_options = "ENCODING=UTF-8", delete_layer = TRUE)
 ```
