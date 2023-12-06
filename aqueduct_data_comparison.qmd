@@ -197,7 +197,7 @@ map_effect_son <- data_for_plot |>
   mapview(
     layer.name = "Effect on SBTN Water Availability layer",
     zcol = "wa_max.diff",
-    col.regions = colorRampPalette(c("royalblue3", "grey95", "orangered3"))(10),
+    col.regions = c("#27408B", "#4F639F", "#7887B4", "#A0AAC8", "#C9CEDD", "#DDC8C1", "#C89F91", "#B47660"),
     lwd = 0,
     alpha.regions = 1
   )
